@@ -72,6 +72,12 @@ async function initBrowser() {
       `--user-data-dir=${tempUserDataDir}`,
       '--window-position=-9999,-9999', // Launch minimized off-screen
       '--window-size=1250,900',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-default-apps',
+      '--disable-infobars',
+      '--disable-sync',
+      '--disable-extensions',
     ], {
       stdio: 'ignore', // Ignore stdio to prevent pipe buffer blocking
       detached: false,
