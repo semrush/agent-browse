@@ -78,7 +78,40 @@ browser navigate <url>
 - `browser navigate https://example.com`
 - `browser navigate https://news.ycombinator.com`
 
-**Output**: JSON with success status, message, and screenshot path
+**Output**: JSON with success status, message, screenshot path, and optionally `pageContext`
+
+## Page Context Instructions
+
+> **Toggle**: Context injection is enabled by default. Set `BROWSER_CONTEXT_INJECTION=false` to disable.
+
+When `browser navigate` returns a `pageContext` field, it contains **domain-specific instructions** for the current website. This context provides knowledge about:
+- UI element locations and naming conventions
+- Common workflows and interaction patterns
+- Page-specific terminology and selectors
+- Known quirks or best practices for the site
+
+**IMPORTANT**: You (Claude) must use this context to give **clear, specific instructions** to the browser agent. The browser agent is a simple executor - it doesn't have domain knowledge. Your job is to translate high-level user intent into precise browser commands using the context.
+
+### How to Use Page Context
+
+1. **Read the context carefully** when it's returned from `navigate`
+2. **Apply the knowledge** when formulating `act`, `extract`, or `observe` commands
+3. **Be specific** - use exact element names, selectors, or patterns mentioned in the context
+4. **Don't pass context to browser commands** - instead, use it to write better instructions
+
+### Example
+
+Without context, you might say:
+```bash
+browser act "click the settings button"
+```
+
+With context that tells you "Settings is accessed via the gear icon in the top-right header", you should say:
+```bash
+browser act "click the gear icon in the top-right header"
+```
+
+The browser agent executes your instructions literally - the more specific and accurate your commands, the better the results.
 
 ### Interact with Pages
 ```bash

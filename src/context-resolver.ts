@@ -228,26 +228,4 @@ export class ContextResolver {
     return false;
   }
 
-  /**
-   * Clear the cache (useful for development/hot-reload).
-   */
-  clearCache(): void {
-    this.cache.clear();
-    this.configCache = null;
-  }
-
-  /**
-   * Format instructions for injection into prompts.
-   */
-  formatForPrompt(instructions: string, currentUrl: string): string {
-    return `## Page Context
-
-**Current URL**: ${currentUrl}
-
-${instructions}
-
----
-
-## Task`;
-  }
 }

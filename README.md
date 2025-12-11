@@ -7,7 +7,7 @@ A skill for seamlessly enabling **[Claude Code](https://docs.claude.com/en/docs/
 On Claude Code, to add the marketplace, simply run:
 
 ```bash
-/plugin marketplace add browserbase/agent-browse
+/plugin marketplace add https://github.com/semrush/agent-browse.git
 ```
 
 Then install the plugin:
@@ -15,14 +15,6 @@ Then install the plugin:
 ```bash
 /plugin install browser-automation@browser-tools
 ```
-
-If you prefer the manual interface:
-1. On Claude Code, type `/plugin`
-2. Select option `3. Add marketplace`
-3. Enter the marketplace source: `browserbase/agent-browse`
-4. Press enter to select the `browser-automation` plugin
-5. Hit enter again to `Install now`
-6. **Restart Claude Code** for changes to take effect
 
 ## Setup
 
@@ -34,11 +26,55 @@ export ANTHROPIC_API_KEY="your-api-key"
 ## Usage
 
 Once installed, just ask Claude to browse:
+- *"Open semrush.com and conduct a keyword research for my domain"*
 - *"Go to Hacker News, get the top post comments, and summarize them "*
 - *"QA test http://localhost:3000 and fix any bugs you encounter"*
-- *"Order me a pizza, you're already signed in on Doordash"*
 
 Claude will handle the rest.
+
+## Context Injection
+
+The skill supports domain-based context injection to provide Claude with site-specific knowledge during automation.
+
+**Toggle**: Set `BROWSER_CONTEXT_INJECTION=false` to disable. Enabled by default.
+
+### How It Works
+
+1. Create a folder in `instructions/` (e.g., `instructions/mysite/`)
+2. Add `_config.json` with domain patterns:
+   ```json
+   { "domains": ["mysite.com", "*.mysite.com"] }
+   ```
+3. Add `_base.md` files at any path level for hierarchical context
+
+When navigating to a URL, the resolver matches the domain and walks the path to build context from all matching `_base.md` files. This context is returned to Claude (the orchestrator), who uses it to formulate precise browser commands.
+
+### Architecture
+
+```
+User request → Claude (orchestrator)
+                    ↓
+              navigate(url) → returns pageContext
+                    ↓
+              Claude reads context, gains domain knowledge
+                    ↓
+              Claude issues specific browser commands
+                    ↓
+              Browser agent executes (no context needed)
+```
+
+The browser agent (Stagehand) is a simple executor. Claude uses the context to translate high-level user intent into precise, specific instructions.
+
+### Semrush Knowledge
+
+Basic demonstrational instructions for [Semrush](instructions/semrush) are included. These describe UI elements, workflows, and navigation patterns.
+
+### Potential Extensions
+
+- **Cloud storage**: Move context to a service that provides instructions via API
+- **Dynamic context**: Fetch context based on URL, user session, or browser state
+- **Role-based instructions**: Different guidance for admin vs regular user flows
+- **Authentication headers**: Store user-specific tokens for authenticated browsing
 
 ## Troubleshooting
 

@@ -44,35 +44,9 @@ let currentPage: any = null;
 let chromeProcess: ChildProcess | null = null;
 let weStartedChrome = false; // Track if we launched Chrome vs. reused existing
 
-// URL context state (persisted to file for cross-process access)
-const CONTEXT_FILE = join(PLUGIN_ROOT, '.context-state.json');
+// Context resolver for domain-specific instructions
 const contextResolver = new ContextResolver(PLUGIN_ROOT);
-
-interface ContextState {
-  url: string;
-  context: string;
-}
-
-function saveContextState(url: string, context: string): void {
-  writeFileSync(CONTEXT_FILE, JSON.stringify({ url, context }));
-}
-
-function loadContextState(): ContextState | null {
-  if (existsSync(CONTEXT_FILE)) {
-    try {
-      return JSON.parse(readFileSync(CONTEXT_FILE, 'utf-8'));
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-function clearContextState(): void {
-  if (existsSync(CONTEXT_FILE)) {
-    try { unlinkSync(CONTEXT_FILE); } catch { /* ignore */ }
-  }
-}
+const CONTEXT_INJECTION_ENABLED = process.env.BROWSER_CONTEXT_INJECTION !== 'false';
 
 async function initBrowser() {
   if (stagehandInstance) {
@@ -284,8 +258,6 @@ async function closeBrowser() {
         // Ignore cleanup errors
       }
     }
-    // Clean up context state
-    clearContextState();
   }
 }
 
@@ -315,14 +287,6 @@ async function navigate(url: string) {
     const { page } = await initBrowser();
     await page.goto(url);
 
-    // Resolve and persist context for cross-process access
-    const context = await contextResolver.resolve(url);
-    if (context) {
-      saveContextState(url, context);
-    } else {
-      clearContextState();
-    }
-
     const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
 
     const result: any = {
@@ -331,10 +295,12 @@ async function navigate(url: string) {
       screenshot: screenshotPath
     };
 
-    // Include context info if found
-    if (context) {
-      result.contextLoaded = true;
-      result.contextPreview = context.substring(0, 200) + (context.length > 200 ? '...' : '');
+    // Return context for Claude to use when giving browser instructions
+    if (CONTEXT_INJECTION_ENABLED) {
+      const context = await contextResolver.resolve(url);
+      if (context) {
+        result.pageContext = context;
+      }
     }
 
     return result;
@@ -350,20 +316,12 @@ async function act(action: string) {
   try {
     const { page } = await initBrowser();
 
-    // Load persisted context and inject if available
-    const state = loadContextState();
-    let enrichedAction = action;
-    if (state) {
-      enrichedAction = contextResolver.formatForPrompt(state.context, state.url) + '\n' + action;
-    }
-
-    await page.act(enrichedAction);
+    await page.act(action);
     const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
     return {
       success: true,
       message: `Successfully performed action: ${action}`,
-      screenshot: screenshotPath,
-      contextInjected: !!state
+      screenshot: screenshotPath
     };
   } catch (error) {
     return {
@@ -376,13 +334,6 @@ async function act(action: string) {
 async function extract(instruction: string, schema?: Record<string, string>) {
   try {
     const { page } = await initBrowser();
-
-    // Load persisted context and inject if available
-    const state = loadContextState();
-    let enrichedInstruction = instruction;
-    if (state) {
-      enrichedInstruction = contextResolver.formatForPrompt(state.context, state.url) + '\n' + instruction;
-    }
 
     let zodSchemaObject;
 
@@ -420,7 +371,7 @@ async function extract(instruction: string, schema?: Record<string, string>) {
     }
 
     // Extract with or without schema
-    const extractOptions: any = { instruction: enrichedInstruction };
+    const extractOptions: any = { instruction };
     if (zodSchemaObject) {
       extractOptions.schema = zodSchemaObject;
     }
@@ -431,8 +382,7 @@ async function extract(instruction: string, schema?: Record<string, string>) {
     return {
       success: true,
       message: `Successfully extracted data: ${JSON.stringify(result)}`,
-      screenshot: screenshotPath,
-      contextInjected: !!state
+      screenshot: screenshotPath
     };
   } catch (error) {
     return {
@@ -446,20 +396,12 @@ async function observe(query: string) {
   try {
     const { page } = await initBrowser();
 
-    // Load persisted context and inject if available
-    const state = loadContextState();
-    let enrichedQuery = query;
-    if (state) {
-      enrichedQuery = contextResolver.formatForPrompt(state.context, state.url) + '\n' + query;
-    }
-
-    const actions = await page.observe(enrichedQuery);
+    const actions = await page.observe(query);
     const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
     return {
       success: true,
       message: `Successfully observed: ${actions}`,
-      screenshot: screenshotPath,
-      contextInjected: !!state
+      screenshot: screenshotPath
     };
   } catch (error) {
     return {
