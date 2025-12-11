@@ -46,3 +46,6 @@ agent/downloads/*
 
 # Stagehand Cache
 tmp/.cache/.chrome-pid
+
+# Claude Code
+**/CLAUDE.local.md

@@ -1,16 +1,91 @@
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
+interface InstructionSetConfig {
+  domains: string[];
+}
+
 /**
  * Resolves URL paths to matching instruction files.
- * Uses hierarchical lookup: _base.md at each level + exact page match.
+ * First matches domain to find instruction set, then uses hierarchical lookup.
  */
 export class ContextResolver {
   private instructionsDir: string;
   private cache: Map<string, string | null> = new Map();
+  private configCache: Map<string, InstructionSetConfig> | null = null;
 
   constructor(pluginRoot: string) {
     this.instructionsDir = join(pluginRoot, 'instructions');
+  }
+
+  /**
+   * Load all instruction set configs from subdirectories.
+   */
+  private loadConfigs(): Map<string, InstructionSetConfig> {
+    if (this.configCache) {
+      return this.configCache;
+    }
+
+    this.configCache = new Map();
+
+    if (!existsSync(this.instructionsDir)) {
+      return this.configCache;
+    }
+
+    const entries = readdirSync(this.instructionsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const configPath = join(this.instructionsDir, entry.name, '_config.json');
+      if (existsSync(configPath)) {
+        try {
+          const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+          if (config.domains && Array.isArray(config.domains)) {
+            this.configCache.set(entry.name, config);
+          }
+        } catch {
+          // Skip invalid configs
+        }
+      }
+    }
+
+    return this.configCache;
+  }
+
+  /**
+   * Check if hostname matches a domain pattern.
+   * Supports exact match and wildcard prefix (*.example.com).
+   */
+  private matchDomain(hostname: string, pattern: string): boolean {
+    // Exact match
+    if (hostname === pattern) {
+      return true;
+    }
+
+    // Wildcard match (*.example.com)
+    if (pattern.startsWith('*.')) {
+      const suffix = pattern.slice(1); // .example.com
+      return hostname.endsWith(suffix) || hostname === pattern.slice(2);
+    }
+
+    return false;
+  }
+
+  /**
+   * Find instruction set folder that matches the hostname.
+   */
+  private findInstructionSet(hostname: string): string | null {
+    const configs = this.loadConfigs();
+
+    for (const [folder, config] of configs) {
+      for (const domain of config.domains) {
+        if (this.matchDomain(hostname, domain)) {
+          return folder;
+        }
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -23,27 +98,40 @@ export class ContextResolver {
       return this.cache.get(url)!;
     }
 
-    const instructions: string[] = [];
-
-    // Parse URL path
+    // Parse URL to get hostname and path
+    let hostname: string;
     let pathname: string;
     try {
-      pathname = new URL(url).pathname;
+      const parsed = new URL(url);
+      hostname = parsed.hostname;
+      pathname = parsed.pathname;
     } catch {
-      // If not a valid URL, treat as path directly
-      pathname = url.startsWith('/') ? url : `/${url}`;
+      // If not a valid URL, no domain matching possible
+      this.cache.set(url, null);
+      return null;
     }
+
+    // Find matching instruction set by domain
+    const instructionSet = this.findInstructionSet(hostname);
+    if (!instructionSet) {
+      // No matching domain - no context injection
+      this.cache.set(url, null);
+      return null;
+    }
+
+    const instructions: string[] = [];
+    const basePath = instructionSet;
 
     // Normalize: remove trailing slash, split into segments
     const normalizedPath = pathname.replace(/\/$/, '') || '/';
     const segments = normalizedPath.split('/').filter(Boolean);
 
-    // 1. Always load root _base.md
-    const rootBase = this.loadFile('_base.md');
+    // 1. Always load root _base.md from the matched instruction set
+    const rootBase = this.loadFile(join(basePath, '_base.md'));
     if (rootBase) instructions.push(rootBase);
 
     // 2. Walk path segments and collect instructions
-    let currentPath = '';
+    let currentPath = basePath;
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
       const isLastSegment = i === segments.length - 1;
@@ -92,7 +180,7 @@ export class ContextResolver {
     // 3. Try exact path match (e.g., /projects/overview.md for /projects/overview)
     if (segments.length > 0) {
       const lastSegment = segments[segments.length - 1];
-      const parentPath = segments.slice(0, -1).join('/');
+      const parentPath = join(basePath, ...segments.slice(0, -1));
       const exactFile = this.loadFile(join(parentPath, `${lastSegment}.md`));
       if (exactFile && !instructions.includes(exactFile)) {
         instructions.push(exactFile);
@@ -145,6 +233,7 @@ export class ContextResolver {
    */
   clearCache(): void {
     this.cache.clear();
+    this.configCache = null;
   }
 
   /**

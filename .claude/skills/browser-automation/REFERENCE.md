@@ -8,14 +8,14 @@ The browser automation system consists of:
 
 - **Stagehand**: TypeScript library wrapping Playwright for AI-driven browser control. Uses AI model to find and interact with the right elements, so be specific
 - **Chrome CDP**: Chrome DevTools Protocol connection on port 9222
-- **CLI Tool**: Command-line interface in `src/cli.ts` for browser automation
+- **CLI Tool**: Command-line interface in `${CLAUDE_PLUGIN_DIR}/cli.ts` for browser automation
 - **Local Chrome**: Chrome browser launched with remote debugging enabled
 
 ### File Locations
 
-- **Chrome Profile**: `.chrome-profile/` - Persistent browser profile directory
-- **Screenshots**: `./agent/browser_screenshots/` - Screenshot output directory
-- **Downloads**: `./agent/downloads/` - File download directory
+- **Chrome Profile**: `${CLAUDE_PLUGIN_DIR}/.chrome-profile/` - Persistent browser profile directory
+- **Screenshots**: `${CLAUDE_PLUGIN_DIR}/agent/browser_screenshots/` - Screenshot output directory
+- **Downloads**: `${CLAUDE_PLUGIN_DIR}/agent/downloads/` - File download directory
 
 ## CLI Command Reference
 
@@ -338,7 +338,7 @@ JSON output:
 
 ### Stagehand Initialization
 
-The Stagehand instance is configured in `src/cli.ts` with:
+The Stagehand instance is configured in `${CLAUDE_PLUGIN_DIR}/src/cli.ts` with:
 
 ```typescript
 new Stagehand({
@@ -361,7 +361,7 @@ new Stagehand({
 
 ### Chrome Launch Arguments
 
-Chrome is launched by `src/cli.ts` with:
+Chrome is launched by `${CLAUDE_PLUGIN_DIR}/cli.ts` with:
 
 ```bash
 --remote-debugging-port=9222
@@ -478,7 +478,7 @@ Browser automation consumes:
 
 ### Enable Verbose Logging
 
-Edit `src/cli.ts` and change verbose level in Stagehand configuration:
+Edit `${CLAUDE_PLUGIN_DIR}/cli.ts` and change verbose level in Stagehand configuration:
 
 ```typescript
 // Change verbose: 0 to verbose: 1 or 2
@@ -529,7 +529,7 @@ browser close
 
 - **Stagehand**: Uses `@browserbasehq/stagehand` package v2.5.2+
 - **Model**: Claude Haiku 4.5 (claude-haiku-4-5-20251001) for browser actions
-- **CLI Tool**: TypeScript CLI in `src/cli.ts`
+- **CLI Tool**: TypeScript CLI in `${CLAUDE_PLUGIN_DIR}/cli.ts`
 - **Agent SDK**: `@anthropic-ai/claude-agent-sdk` for conversation framework
 - **Browser**: Local Chrome/Chromium installation
 

@@ -1,0 +1,8 @@
+{
+  "domains": [
+    "semrush.com",
+    "www.semrush.com",
+    "*.semrush.com",
+    "*.semrush.net"
+  ]
+}

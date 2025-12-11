@@ -18,7 +18,7 @@ This skill uses a CLI-based approach where Claude Code calls browser automation 
 
 ### First-Time Setup Check
 
-1. **Read `setup.json`** (located in `.claude/skills/browser-automation/setup.json`)
+1. **Read `setup.json`** (located in `${CLAUDE_PLUGIN_DIR}/.claude/skills/browser-automation/setup.json`)
 2. **Check `setupComplete` field**:
    - If `true`: All prerequisites are met, proceed with browser commands
    - If `false`: Setup required - follow the steps below
