@@ -5,6 +5,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { findLocalChrome, prepareChromeProfile, takeScreenshot } from './browser-utils.js';
+import { ContextResolver } from './context-resolver.js';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 
@@ -16,10 +17,13 @@ if (!import.meta.url) {
 }
 
 // Resolve plugin root directory from script location
-// In production (compiled): dist/src/cli.js -> dist/src -> dist -> plugin-root
+// Handles both: src/cli.ts (dev) and dist/src/cli.js (prod)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const PLUGIN_ROOT = resolve(__dirname, '..', '..');
+const isDevMode = __dirname.endsWith('/src') && !__dirname.includes('/dist/');
+const PLUGIN_ROOT = isDevMode
+  ? resolve(__dirname, '..')      // src/cli.ts -> src -> plugin-root
+  : resolve(__dirname, '..', '..'); // dist/src/cli.js -> dist/src -> dist -> plugin-root
 
 // Load .env from plugin root directory
 dotenv.config({ path: join(PLUGIN_ROOT, '.env'), quiet: true });
@@ -39,6 +43,36 @@ let stagehandInstance: Stagehand | null = null;
 let currentPage: any = null;
 let chromeProcess: ChildProcess | null = null;
 let weStartedChrome = false; // Track if we launched Chrome vs. reused existing
+
+// URL context state (persisted to file for cross-process access)
+const CONTEXT_FILE = join(PLUGIN_ROOT, '.context-state.json');
+const contextResolver = new ContextResolver(PLUGIN_ROOT);
+
+interface ContextState {
+  url: string;
+  context: string;
+}
+
+function saveContextState(url: string, context: string): void {
+  writeFileSync(CONTEXT_FILE, JSON.stringify({ url, context }));
+}
+
+function loadContextState(): ContextState | null {
+  if (existsSync(CONTEXT_FILE)) {
+    try {
+      return JSON.parse(readFileSync(CONTEXT_FILE, 'utf-8'));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function clearContextState(): void {
+  if (existsSync(CONTEXT_FILE)) {
+    try { unlinkSync(CONTEXT_FILE); } catch { /* ignore */ }
+  }
+}
 
 async function initBrowser() {
   if (stagehandInstance) {
@@ -250,6 +284,8 @@ async function closeBrowser() {
         // Ignore cleanup errors
       }
     }
+    // Clean up context state
+    clearContextState();
   }
 }
 
@@ -278,12 +314,30 @@ async function navigate(url: string) {
   try {
     const { page } = await initBrowser();
     await page.goto(url);
+
+    // Resolve and persist context for cross-process access
+    const context = await contextResolver.resolve(url);
+    if (context) {
+      saveContextState(url, context);
+    } else {
+      clearContextState();
+    }
+
     const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
-    return {
+
+    const result: any = {
       success: true,
       message: `Successfully navigated to ${url}`,
       screenshot: screenshotPath
     };
+
+    // Include context info if found
+    if (context) {
+      result.contextLoaded = true;
+      result.contextPreview = context.substring(0, 200) + (context.length > 200 ? '...' : '');
+    }
+
+    return result;
   } catch (error) {
     return {
       success: false,
@@ -295,12 +349,21 @@ async function navigate(url: string) {
 async function act(action: string) {
   try {
     const { page } = await initBrowser();
-    await page.act(action);
+
+    // Load persisted context and inject if available
+    const state = loadContextState();
+    let enrichedAction = action;
+    if (state) {
+      enrichedAction = contextResolver.formatForPrompt(state.context, state.url) + '\n' + action;
+    }
+
+    await page.act(enrichedAction);
     const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
     return {
       success: true,
       message: `Successfully performed action: ${action}`,
-      screenshot: screenshotPath
+      screenshot: screenshotPath,
+      contextInjected: !!state
     };
   } catch (error) {
     return {
@@ -313,6 +376,13 @@ async function act(action: string) {
 async function extract(instruction: string, schema?: Record<string, string>) {
   try {
     const { page } = await initBrowser();
+
+    // Load persisted context and inject if available
+    const state = loadContextState();
+    let enrichedInstruction = instruction;
+    if (state) {
+      enrichedInstruction = contextResolver.formatForPrompt(state.context, state.url) + '\n' + instruction;
+    }
 
     let zodSchemaObject;
 
@@ -350,7 +420,7 @@ async function extract(instruction: string, schema?: Record<string, string>) {
     }
 
     // Extract with or without schema
-    const extractOptions: any = { instruction };
+    const extractOptions: any = { instruction: enrichedInstruction };
     if (zodSchemaObject) {
       extractOptions.schema = zodSchemaObject;
     }
@@ -361,7 +431,8 @@ async function extract(instruction: string, schema?: Record<string, string>) {
     return {
       success: true,
       message: `Successfully extracted data: ${JSON.stringify(result)}`,
-      screenshot: screenshotPath
+      screenshot: screenshotPath,
+      contextInjected: !!state
     };
   } catch (error) {
     return {
@@ -374,12 +445,21 @@ async function extract(instruction: string, schema?: Record<string, string>) {
 async function observe(query: string) {
   try {
     const { page } = await initBrowser();
-    const actions = await page.observe(query);
+
+    // Load persisted context and inject if available
+    const state = loadContextState();
+    let enrichedQuery = query;
+    if (state) {
+      enrichedQuery = contextResolver.formatForPrompt(state.context, state.url) + '\n' + query;
+    }
+
+    const actions = await page.observe(enrichedQuery);
     const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
     return {
       success: true,
       message: `Successfully observed: ${actions}`,
-      screenshot: screenshotPath
+      screenshot: screenshotPath,
+      contextInjected: !!state
     };
   } catch (error) {
     return {
