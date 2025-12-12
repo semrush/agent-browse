@@ -115,6 +115,10 @@ For browser automation tasks, use bash commands to call the CLI tool:
 - \`tsx src/cli.ts extract "<instruction>" '{"field": "type"}'\` - Extract structured data
 - \`tsx src/cli.ts observe "<query>"\` - Discover elements on page
 - \`tsx src/cli.ts screenshot\` - Take a screenshot
+- \`tsx src/cli.ts tabs\` - List all open tabs with their titles and URLs
+- \`tsx src/cli.ts newtab [url]\` - Open a new tab (optionally navigate to URL)
+- \`tsx src/cli.ts closetab [index]\` - Close a tab by index (or current tab if no index)
+- \`tsx src/cli.ts switchtab <index>\` - Switch to a tab by index
 - \`tsx src/cli.ts close\` - Close the browser
 
 **Important:**
@@ -124,6 +128,8 @@ For browser automation tasks, use bash commands to call the CLI tool:
 - The browser stays open between commands for faster operations
 - Always close the browser when done with tasks
 - Use the TodoWrite tool to track your browser automation steps
+- Use tabs command to see all open tabs and their indices
+- Tab indices start at 0
 
 All commands output JSON with success status and relevant data.`
       },

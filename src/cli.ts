@@ -427,6 +427,171 @@ async function screenshot() {
   }
 }
 
+async function listTabs() {
+  try {
+    const { page } = await initBrowser();
+    const context = page.context();
+    const pages = context.pages();
+
+    const tabs = await Promise.all(pages.map(async (p: any, index: number) => {
+      let title = '';
+      let url = '';
+      try {
+        title = await p.title();
+        url = p.url();
+      } catch {
+        // Page might be closed or navigating
+        title = '(loading...)';
+        url = p.url() || '(unknown)';
+      }
+      return {
+        index,
+        title,
+        url,
+        active: p === currentPage
+      };
+    }));
+
+    return {
+      success: true,
+      message: `Found ${tabs.length} open tab(s)`,
+      tabs
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+async function newTab(url?: string) {
+  try {
+    const { page } = await initBrowser();
+    const context = page.context();
+
+    // Create a new page (tab)
+    const newPage = await context.newPage();
+
+    // Update current page reference
+    currentPage = newPage;
+
+    // Navigate to URL if provided
+    if (url) {
+      await newPage.goto(url);
+    }
+
+    const screenshotPath = await takeScreenshot(newPage, PLUGIN_ROOT);
+
+    const result: any = {
+      success: true,
+      message: url ? `Opened new tab and navigated to ${url}` : 'Opened new tab',
+      screenshot: screenshotPath
+    };
+
+    // Return context for Claude to use when giving browser instructions
+    if (url && CONTEXT_INJECTION_ENABLED) {
+      const context = await contextResolver.resolve(url);
+      if (context) {
+        result.pageContext = context;
+      }
+    }
+
+    return result;
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+async function closeTab(tabIndex?: number) {
+  try {
+    const { page } = await initBrowser();
+    const context = page.context();
+    const pages = context.pages();
+
+    if (pages.length <= 1) {
+      return {
+        success: false,
+        error: 'Cannot close the last tab. Use "close" command to close the browser instead.'
+      };
+    }
+
+    // Determine which tab to close
+    const indexToClose = tabIndex !== undefined ? tabIndex : pages.indexOf(currentPage);
+
+    if (indexToClose < 0 || indexToClose >= pages.length) {
+      return {
+        success: false,
+        error: `Invalid tab index: ${tabIndex}. Valid range is 0-${pages.length - 1}`
+      };
+    }
+
+    const pageToClose = pages[indexToClose];
+    const closedUrl = pageToClose.url();
+
+    // If closing the current tab, switch to another tab first
+    if (pageToClose === currentPage) {
+      // Switch to the previous tab, or the next one if closing the first tab
+      const newIndex = indexToClose > 0 ? indexToClose - 1 : 1;
+      currentPage = pages[newIndex];
+    }
+
+    await pageToClose.close();
+
+    const screenshotPath = await takeScreenshot(currentPage, PLUGIN_ROOT);
+
+    return {
+      success: true,
+      message: `Closed tab ${indexToClose} (${closedUrl})`,
+      screenshot: screenshotPath
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+async function switchTab(tabIndex: number) {
+  try {
+    const { page } = await initBrowser();
+    const context = page.context();
+    const pages = context.pages();
+
+    if (tabIndex < 0 || tabIndex >= pages.length) {
+      return {
+        success: false,
+        error: `Invalid tab index: ${tabIndex}. Valid range is 0-${pages.length - 1}`
+      };
+    }
+
+    currentPage = pages[tabIndex];
+
+    // Bring the tab to focus
+    await currentPage.bringToFront();
+
+    const screenshotPath = await takeScreenshot(currentPage, PLUGIN_ROOT);
+    const title = await currentPage.title();
+    const url = currentPage.url();
+
+    return {
+      success: true,
+      message: `Switched to tab ${tabIndex}: ${title}`,
+      url,
+      screenshot: screenshotPath
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
 // Main CLI handler
 async function main() {
   // Prepare Chrome profile on first run
@@ -473,13 +638,44 @@ async function main() {
         result = await screenshot();
         break;
 
+      case 'tabs':
+        result = await listTabs();
+        break;
+
+      case 'newtab':
+        result = await newTab(args[1]); // URL is optional
+        break;
+
+      case 'closetab':
+        if (args[1] !== undefined) {
+          const tabIndex = parseInt(args[1], 10);
+          if (isNaN(tabIndex)) {
+            throw new Error('Usage: browser closetab [index] - index must be a number');
+          }
+          result = await closeTab(tabIndex);
+        } else {
+          result = await closeTab(); // Close current tab
+        }
+        break;
+
+      case 'switchtab':
+        if (args.length < 2) {
+          throw new Error('Usage: browser switchtab <index>');
+        }
+        const switchIndex = parseInt(args[1], 10);
+        if (isNaN(switchIndex)) {
+          throw new Error('Usage: browser switchtab <index> - index must be a number');
+        }
+        result = await switchTab(switchIndex);
+        break;
+
       case 'close':
         await closeBrowser();
         result = { success: true, message: 'Browser closed' };
         break;
 
       default:
-        throw new Error(`Unknown command: ${command}\nAvailable commands: navigate, act, extract, observe, screenshot, close`);
+        throw new Error(`Unknown command: ${command}\nAvailable commands: navigate, act, extract, observe, screenshot, tabs, newtab, closetab, switchtab, close`);
     }
 
     console.log(JSON.stringify(result, null, 2));

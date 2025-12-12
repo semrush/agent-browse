@@ -289,6 +289,179 @@ browser screenshot
 
 ---
 
+### tabs
+
+List all open browser tabs.
+
+**Usage**:
+```bash
+browser tabs
+```
+
+**Parameters**: None
+
+**Returns**:
+JSON output:
+```json
+{
+  "success": true,
+  "message": "Found 3 open tab(s)",
+  "tabs": [
+    {
+      "index": 0,
+      "title": "Example Domain",
+      "url": "https://example.com/",
+      "active": false
+    },
+    {
+      "index": 1,
+      "title": "Google",
+      "url": "https://google.com/",
+      "active": true
+    }
+  ]
+}
+```
+
+**Implementation Details**:
+- Uses Playwright's `context.pages()` to get all open pages
+- Returns index, title, URL, and active status for each tab
+- Active tab is the one currently being controlled by other commands
+
+**Use Cases**:
+- Discovering available tabs after browser has been running
+- Finding tab indices for switching or closing
+- Verifying tab state after operations
+
+**Error Handling**:
+- Returns empty array if no tabs are open (shouldn't happen)
+- Handles tabs that are still loading gracefully
+
+---
+
+### newtab
+
+Open a new browser tab, optionally navigating to a URL.
+
+**Usage**:
+```bash
+browser newtab [url]
+```
+
+**Parameters**:
+- `url` (string, optional): URL to navigate to in the new tab
+
+**Returns**:
+JSON output:
+```json
+{
+  "success": true,
+  "message": "Opened new tab and navigated to https://example.com",
+  "screenshot": "/path/to/screenshot.png"
+}
+```
+
+**Implementation Details**:
+- Uses Playwright's `context.newPage()` to create a new tab
+- New tab automatically becomes the active tab
+- If URL provided, navigates to it using `page.goto()`
+- Supports context injection for domain-specific instructions
+
+**Example**:
+```bash
+browser newtab
+browser newtab https://google.com
+```
+
+**Error Handling**:
+- Navigation errors return with `success: false`
+- Invalid URLs return error message
+
+---
+
+### closetab
+
+Close a browser tab by index.
+
+**Usage**:
+```bash
+browser closetab [index]
+```
+
+**Parameters**:
+- `index` (number, optional): Index of the tab to close (0-based). If omitted, closes current tab.
+
+**Returns**:
+JSON output:
+```json
+{
+  "success": true,
+  "message": "Closed tab 1 (https://example.com/)",
+  "screenshot": "/path/to/screenshot.png"
+}
+```
+
+**Implementation Details**:
+- Uses Playwright's `page.close()` to close the specified tab
+- Cannot close the last remaining tab (returns error)
+- If closing the current tab, automatically switches to an adjacent tab
+- Returns screenshot of the now-active tab
+
+**Example**:
+```bash
+browser closetab      # Close current tab
+browser closetab 0    # Close first tab
+browser closetab 2    # Close third tab
+```
+
+**Error Handling**:
+- Returns error if trying to close the last tab
+- Returns error for invalid tab index
+- Returns error if index is not a number
+
+---
+
+### switchtab
+
+Switch to a different browser tab by index.
+
+**Usage**:
+```bash
+browser switchtab <index>
+```
+
+**Parameters**:
+- `index` (number, required): Index of the tab to switch to (0-based)
+
+**Returns**:
+JSON output:
+```json
+{
+  "success": true,
+  "message": "Switched to tab 0: Example Domain",
+  "url": "https://example.com/",
+  "screenshot": "/path/to/screenshot.png"
+}
+```
+
+**Implementation Details**:
+- Updates the internal `currentPage` reference
+- Uses Playwright's `page.bringToFront()` to focus the tab
+- Takes a screenshot of the newly active tab
+- Returns the page title and URL
+
+**Example**:
+```bash
+browser switchtab 0    # Switch to first tab
+browser switchtab 2    # Switch to third tab
+```
+
+**Error Handling**:
+- Returns error for invalid tab index
+- Returns error if index is not a number
+
+---
+
 ### close
 
 Close the browser and cleanup resources.

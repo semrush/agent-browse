@@ -179,6 +179,60 @@ browser screenshot
 
 **Output**: JSON with success status and screenshot path
 
+### Tab Management
+
+#### List Open Tabs
+```bash
+browser tabs
+```
+
+**When to use**: See all open tabs, find tab indices, check which tab is active.
+
+**Output**: JSON with success status and array of tabs (index, title, url, active status)
+
+#### Open New Tab
+```bash
+browser newtab [url]
+```
+
+**When to use**: Opening a new tab, optionally navigating to a URL. The new tab becomes the active tab.
+
+**Example usage**:
+- `browser newtab` - Open a blank new tab
+- `browser newtab https://example.com` - Open new tab and navigate to URL
+
+**Output**: JSON with success status, message, and screenshot path
+
+#### Close Tab
+```bash
+browser closetab [index]
+```
+
+**When to use**: Closing a specific tab or the current tab.
+
+**Example usage**:
+- `browser closetab` - Close the current tab
+- `browser closetab 2` - Close tab at index 2
+
+**Notes**:
+- Cannot close the last remaining tab (use `close` to close the browser)
+- If closing the current tab, automatically switches to an adjacent tab
+
+**Output**: JSON with success status, message, and screenshot path
+
+#### Switch Tab
+```bash
+browser switchtab <index>
+```
+
+**When to use**: Switching focus to a different tab by its index.
+
+**Example usage**:
+- `browser switchtab 0` - Switch to the first tab
+- `browser switchtab 2` - Switch to the third tab
+
+**Output**: JSON with success status, message, URL, and screenshot path
+
 ### Clean Up
 ```bash
 browser close
@@ -246,6 +300,19 @@ browser screenshot
 browser observe "find all buttons"
 browser act "click the specific button"
 browser screenshot
+browser close
+```
+
+### Multi-tab workflow
+```bash
+browser navigate https://example.com
+browser newtab https://google.com
+browser tabs
+browser switchtab 0
+browser act "click a link"
+browser switchtab 1
+browser act "search for something"
+browser closetab 1
 browser close
 ```
 
