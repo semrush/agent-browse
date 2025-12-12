@@ -26,8 +26,8 @@ export ANTHROPIC_API_KEY="your-api-key"
 ## Usage
 
 Once installed, just ask Claude to browse:
-- *"Open semrush.com and conduct a keyword research for my domain"*
-- *"Go to Hacker News, get the top post comments, and summarize them "*
+- *"Open rc.semrush.net and conduct a keyword research for my domain"*
+- *"Open Site Audit on rc.semrush.net and explore the new feature as a user"*
 - *"QA test http://localhost:3000 and fix any bugs you encounter"*
 
 Claude will handle the rest.
@@ -75,6 +75,10 @@ Basic demonstrational instructions for [Semrush](instructions/semrush) are inclu
 - **Dynamic context**: Fetch context based on URL, user session, or browser state
 - **Role-based instructions**: Different guidance for admin vs regular user flows
 - **Authentication headers**: Store user-specific tokens for authenticated browsing
+
+## Security
+
+**Never give Claude your real account credentials.** If automation requires logging into Semrush or any other service, create a separate test account specifically for Claude to use. This protects your primary account and limits potential exposure.
 
 ## Troubleshooting
 
