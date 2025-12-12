@@ -5,7 +5,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { findLocalChrome, prepareChromeProfile, takeScreenshot } from './browser-utils.js';
-import { ContextResolver } from './context-resolver.js';
+import { FileContextResolver } from './context-resolver/index.js';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 
@@ -45,7 +45,7 @@ let chromeProcess: ChildProcess | null = null;
 let weStartedChrome = false; // Track if we launched Chrome vs. reused existing
 
 // Context resolver for domain-specific instructions
-const contextResolver = new ContextResolver(PLUGIN_ROOT);
+const contextResolver = new FileContextResolver(PLUGIN_ROOT);
 const CONTEXT_INJECTION_ENABLED = process.env.BROWSER_CONTEXT_INJECTION !== 'false';
 
 async function initBrowser() {

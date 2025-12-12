@@ -1,15 +1,17 @@
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import type { IContextResolver } from './types.js';
 
 interface InstructionSetConfig {
   domains: string[];
 }
 
 /**
- * Resolves URL paths to matching instruction files.
+ * File-based context resolver.
+ * Resolves URL paths to matching instruction files from local filesystem.
  * First matches domain to find instruction set, then uses hierarchical lookup.
  */
-export class ContextResolver {
+export class FileContextResolver implements IContextResolver {
   private instructionsDir: string;
   private cache: Map<string, string | null> = new Map();
   private configCache: Map<string, InstructionSetConfig> | null = null;
@@ -227,5 +229,4 @@ export class ContextResolver {
     if (/^[a-f0-9]{24}$/i.test(segment)) return true;
     return false;
   }
-
 }
