@@ -2,6 +2,8 @@
 
 A skill for seamlessly enabling **[Claude Code](https://docs.claude.com/en/docs/claude-code/overview)** to interface with a browser using **[Stagehand](https://github.com/browserbase/stagehand)** (AI browser automation framework). Because Stagehand accepts natural language instructions, it's significantly more context-efficient than native Playwright while providing more features built for automation.
 
+This is a fork of the original skill that is upgraded with a mechanism for retrieving contextual instructions and injecting them into the browser operator Claude's context. It enables "teaching" Claude to use Semrush as a pro user.  
+
 ## Installation
 
 On Claude Code, to add the marketplace, simply run:
@@ -65,16 +67,21 @@ User request → Claude (orchestrator)
 
 The browser agent (Stagehand) is a simple executor. Claude uses the context to translate high-level user intent into precise, specific instructions.
 
-### Semrush Knowledge
+### Semrush Instructions
 
 Basic demonstrational instructions for [Semrush](instructions/semrush) are included. These describe UI elements, workflows, and navigation patterns.
 
-### Potential Extensions
+## Potential Extensions and Use
 
+The context injection mechanism could be extended:
 - **Cloud storage**: Move context to a service that provides instructions via API
-- **Dynamic context**: Fetch context based on URL, user session, or browser state
-- **Role-based instructions**: Different guidance for admin vs regular user flows
+- **Dynamic context**: Fetch context based on URL parameters, user session (subscription type, user roles, etc.), or browser state
 - **Authentication headers**: Store user-specific tokens for authenticated browsing
+
+This Claude Code skill could be used for:
+- exploratory testing
+- "playing" user scenarios
+- getting product insights
 
 ## Security
 
