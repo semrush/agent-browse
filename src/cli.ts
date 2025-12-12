@@ -287,17 +287,23 @@ async function navigate(url: string) {
     const { page } = await initBrowser();
     await page.goto(url);
 
+    // Use final URL after redirects for context resolution
+    const finalUrl = page.url();
+    const wasRedirected = finalUrl !== url;
+
     const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
 
     const result: any = {
       success: true,
-      message: `Successfully navigated to ${url}`,
+      message: wasRedirected
+        ? `Navigated to ${url} → redirected to ${finalUrl}`
+        : `Successfully navigated to ${url}`,
       screenshot: screenshotPath
     };
 
     // Return context for Claude to use when giving browser instructions
     if (CONTEXT_INJECTION_ENABLED) {
-      const context = await contextResolver.resolve(url);
+      const context = await contextResolver.resolve(finalUrl);
       if (context) {
         result.pageContext = context;
       }
@@ -316,13 +322,30 @@ async function act(action: string) {
   try {
     const { page } = await initBrowser();
 
+    const urlBefore = page.url();
     await page.act(action);
+    const urlAfter = page.url();
+    const navigated = urlAfter !== urlBefore;
+
     const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
-    return {
+
+    const result: any = {
       success: true,
-      message: `Successfully performed action: ${action}`,
+      message: navigated
+        ? `Performed action: ${action} → navigated to ${urlAfter}`
+        : `Successfully performed action: ${action}`,
       screenshot: screenshotPath
     };
+
+    // Inject context if action caused navigation
+    if (navigated && CONTEXT_INJECTION_ENABLED) {
+      const context = await contextResolver.resolve(urlAfter);
+      if (context) {
+        result.pageContext = context;
+      }
+    }
+
+    return result;
   } catch (error) {
     return {
       success: false,
