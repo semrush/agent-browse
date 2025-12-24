@@ -49,3 +49,5 @@ tmp/.cache/.chrome-pid
 
 # Claude Code
 **/CLAUDE.local.md
+.browser-screenshots
+.browser-downloads

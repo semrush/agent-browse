@@ -97,10 +97,12 @@ Install Chrome for your platform:
 
 ### Profile refresh
 
-To refresh cookies from your main Chrome profile:
+To refresh cookies from your project's Chrome profile:
 ```bash
 rm -rf .chrome-profile
 ```
+
+**Note**: Browser artifacts (`.chrome-profile`, `.browser-screenshots`, `.browser-downloads`) are stored per-project, allowing multiple Claude sessions to use isolated browsers concurrently.
 
 ## Resources
 

@@ -25,6 +25,9 @@ const PLUGIN_ROOT = isDevMode
   ? resolve(__dirname, '..')      // src/cli.ts -> src -> plugin-root
   : resolve(__dirname, '..', '..'); // dist/src/cli.js -> dist/src -> dist -> plugin-root
 
+// Project directory for per-project browser isolation
+const PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+
 // Load .env from plugin root directory
 dotenv.config({ path: join(PLUGIN_ROOT, '.env'), quiet: true });
 
@@ -44,13 +47,83 @@ let currentPage: any = null;
 let chromeProcess: ChildProcess | null = null;
 let weStartedChrome = false; // Track if we launched Chrome vs. reused existing
 
+// Profile configuration (set in main, used by initBrowser)
+let profileConfig: {
+  userDataDir: string;
+  profileDirectory?: string;
+  isCustomProfile: boolean;
+} | null = null;
+
 // Context resolver for domain-specific instructions
 const contextResolver = new FileContextResolver(PLUGIN_ROOT);
 const CONTEXT_INJECTION_ENABLED = process.env.BROWSER_CONTEXT_INJECTION !== 'false';
 
+// Original custom profile path (for port calculation)
+let customProfileSource: string | null = null;
+
+// Session port (loaded from file or calculated)
+let cachedSessionPort: number | null = null;
+
+// Port file path for session persistence
+const PORT_FILE_PATH = join(PROJECT_DIR, '.browser-port');
+
+// Generate deterministic port from project + profile for concurrent session support
+function calculateSessionPort(): number {
+  // Combine project dir and original profile path for unique port per profile
+  const uniqueKey = [
+    PROJECT_DIR,
+    customProfileSource || ''
+  ].join('|');
+
+  let hash = 0;
+  for (let i = 0; i < uniqueKey.length; i++) {
+    hash = ((hash << 5) - hash) + uniqueKey.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return 9222 + (Math.abs(hash) % 10000);
+}
+
+// Get session port - reads from file if exists, otherwise calculates
+function getSessionPort(): number {
+  // Return cached port if already loaded
+  if (cachedSessionPort !== null) {
+    return cachedSessionPort;
+  }
+
+  // Try to read port from file (for subsequent commands in same session)
+  if (existsSync(PORT_FILE_PATH)) {
+    try {
+      const portData = JSON.parse(readFileSync(PORT_FILE_PATH, 'utf8'));
+      if (portData.port && typeof portData.port === 'number') {
+        cachedSessionPort = portData.port;
+        return portData.port;
+      }
+    } catch {
+      // Ignore read errors, will calculate new port
+    }
+  }
+
+  // Calculate new port
+  cachedSessionPort = calculateSessionPort();
+  return cachedSessionPort;
+}
+
+// Save session port to file for subsequent commands
+function saveSessionPort(port: number): void {
+  writeFileSync(PORT_FILE_PATH, JSON.stringify({
+    port,
+    profile: customProfileSource || null,
+    timestamp: Date.now()
+  }));
+}
+
 async function initBrowser() {
   if (stagehandInstance) {
     return { stagehand: stagehandInstance, page: currentPage };
+  }
+
+  if (!profileConfig) {
+    throw new Error('Profile config not initialized. Call prepareChromeProfile first.');
   }
 
   const chromePath = findLocalChrome();
@@ -58,8 +131,7 @@ async function initBrowser() {
     throw new Error('Could not find Chrome installation');
   }
 
-  const cdpPort = 9222;
-  const tempUserDataDir = join(PLUGIN_ROOT, '.chrome-profile');
+  const cdpPort = getSessionPort();
 
   // Check if Chrome is already running on the CDP port
   let chromeReady = false;
@@ -75,9 +147,9 @@ async function initBrowser() {
 
   // Launch Chrome if not already running
   if (!chromeReady) {
-    chromeProcess = spawn(chromePath, [
+    const chromeArgs = [
       `--remote-debugging-port=${cdpPort}`,
-      `--user-data-dir=${tempUserDataDir}`,
+      `--user-data-dir=${profileConfig.userDataDir}`,
       '--window-position=-9999,-9999', // Launch minimized off-screen
       '--window-size=1250,900',
       '--no-first-run',
@@ -85,23 +157,34 @@ async function initBrowser() {
       '--disable-default-apps',
       '--disable-infobars',
       '--disable-sync',
-      '--disable-extensions',
-    ], {
+    ];
+
+    // Add profile-directory flag if using a custom profile
+    if (profileConfig.profileDirectory) {
+      chromeArgs.push(`--profile-directory=${profileConfig.profileDirectory}`);
+    }
+
+    // Only disable extensions for isolated profiles (not custom user profiles)
+    if (!profileConfig.isCustomProfile) {
+      chromeArgs.push('--disable-extensions');
+    }
+
+    chromeProcess = spawn(chromePath, chromeArgs, {
       stdio: 'ignore', // Ignore stdio to prevent pipe buffer blocking
       detached: false,
     });
 
     // Store PID for safe cleanup later
     if (chromeProcess.pid) {
-      const pidFilePath = join(PLUGIN_ROOT, '.chrome-pid');
+      const pidFilePath = join(PROJECT_DIR, '.chrome-pid');
       writeFileSync(pidFilePath, JSON.stringify({
         pid: chromeProcess.pid,
         startTime: Date.now()
       }));
     }
 
-    // Wait for Chrome to be ready
-    for (let i = 0; i < 50; i++) {
+    // Wait for Chrome to be ready (up to 30 seconds for first launch with large profiles)
+    for (let i = 0; i < 100; i++) {
       try {
         const response = await fetch(`http://127.0.0.1:${cdpPort}/json/version`);
         if (response.ok) {
@@ -118,12 +201,17 @@ async function initBrowser() {
     if (!chromeReady) {
       throw new Error('Chrome failed to start');
     }
+
+    // Save port to file for subsequent commands
+    saveSessionPort(cdpPort);
   }
 
   // Initialize Stagehand
+  const rawVerbose = parseInt(process.env.STAGEHAND_VERBOSE || '0', 10);
+  const verboseLevel = Math.min(2, Math.max(0, rawVerbose)) as 0 | 1 | 2;
   stagehandInstance = new Stagehand({
     env: "LOCAL",
-    verbose: 0,
+    verbose: verboseLevel,
     modelName: "anthropic/claude-haiku-4-5-20251001",
     localBrowserLaunchOptions: {
       cdpUrl: `http://localhost:${cdpPort}`,
@@ -145,8 +233,8 @@ async function initBrowser() {
     }
   }
 
-  // Configure downloads
-  const downloadsPath = join(PLUGIN_ROOT, 'agent', 'downloads');
+  // Configure downloads to project directory
+  const downloadsPath = join(PROJECT_DIR, '.browser-downloads');
   if (!existsSync(downloadsPath)) {
     mkdirSync(downloadsPath, { recursive: true });
   }
@@ -163,8 +251,8 @@ async function initBrowser() {
 }
 
 async function closeBrowser() {
-  const cdpPort = 9222;
-  const pidFilePath = join(PLUGIN_ROOT, '.chrome-pid');
+  const cdpPort = getSessionPort();
+  const pidFilePath = join(PROJECT_DIR, '.chrome-pid');
 
   // First, try to close via Stagehand if we have an instance in this process
   if (stagehandInstance) {
@@ -250,10 +338,17 @@ async function closeBrowser() {
   } catch (error) {
     // Chrome not running or already closed
   } finally {
-    // Clean up PID file
+    // Clean up PID file and port file
     if (existsSync(pidFilePath)) {
       try {
         unlinkSync(pidFilePath);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    if (existsSync(PORT_FILE_PATH)) {
+      try {
+        unlinkSync(PORT_FILE_PATH);
       } catch {
         // Ignore cleanup errors
       }
@@ -281,17 +376,40 @@ async function verifyIsChromeProcess(pid: number): Promise<boolean> {
   }
 }
 
+function ensureGitignore(projectDir: string) {
+  const gitignorePath = join(projectDir, '.gitignore');
+  const entries = ['.chrome-profile', '.chrome-pid', '.browser-port', '.browser-screenshots', '.browser-downloads'];
+
+  let content = '';
+  if (existsSync(gitignorePath)) {
+    content = readFileSync(gitignorePath, 'utf-8');
+  }
+
+  const toAdd = entries.filter(e => !content.includes(e));
+  if (toAdd.length > 0) {
+    const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+    writeFileSync(gitignorePath, content + prefix + toAdd.join('\n') + '\n');
+  }
+}
+
 // CLI commands
 async function navigate(url: string) {
   try {
     const { page } = await initBrowser();
     await page.goto(url);
 
+    // Wait for network to settle (handles lazy-loaded content)
+    try {
+      await page.waitForLoadState('networkidle', { timeout: 10000 });
+    } catch {
+      // Timeout is acceptable - some pages never reach network idle
+    }
+
     // Use final URL after redirects for context resolution
     const finalUrl = page.url();
     const wasRedirected = finalUrl !== url;
 
-    const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
+    const screenshotPath = await takeScreenshot(page, PROJECT_DIR);
 
     const result: any = {
       success: true,
@@ -322,12 +440,29 @@ async function act(action: string) {
   try {
     const { page } = await initBrowser();
 
+    // Capture scroll position before action
+    const scrollBefore = await page.evaluate(() => ({
+      x: window.scrollX,
+      y: window.scrollY
+    }));
+
     const urlBefore = page.url();
     await page.act(action);
     const urlAfter = page.url();
     const navigated = urlAfter !== urlBefore;
 
-    const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
+    // Detect scroll and wait for content to settle
+    const scrollAfter = await page.evaluate(() => ({
+      x: window.scrollX,
+      y: window.scrollY
+    }));
+    const scrolled = scrollBefore.x !== scrollAfter.x || scrollBefore.y !== scrollAfter.y;
+    if (scrolled) {
+      // Wait for lazy-loaded content and animations to settle
+      await page.waitForTimeout(500);
+    }
+
+    const screenshotPath = await takeScreenshot(page, PROJECT_DIR);
 
     const result: any = {
       success: true,
@@ -401,7 +536,7 @@ async function extract(instruction: string, schema?: Record<string, string>) {
 
     const result = await page.extract(extractOptions);
 
-    const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
+    const screenshotPath = await takeScreenshot(page, PROJECT_DIR);
     return {
       success: true,
       message: `Successfully extracted data: ${JSON.stringify(result)}`,
@@ -420,7 +555,7 @@ async function observe(query: string) {
     const { page } = await initBrowser();
 
     const actions = await page.observe(query);
-    const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
+    const screenshotPath = await takeScreenshot(page, PROJECT_DIR);
     return {
       success: true,
       message: `Successfully observed: ${actions}`,
@@ -437,7 +572,7 @@ async function observe(query: string) {
 async function screenshot() {
   try {
     const { page } = await initBrowser();
-    const screenshotPath = await takeScreenshot(page, PLUGIN_ROOT);
+    const screenshotPath = await takeScreenshot(page, PROJECT_DIR);
     return {
       success: true,
       screenshot: screenshotPath
@@ -452,44 +587,57 @@ async function screenshot() {
 
 // Main CLI handler
 async function main() {
-  // Prepare Chrome profile on first run
-  prepareChromeProfile(PLUGIN_ROOT);
-
   const args = process.argv.slice(2);
-  const command = args[0];
+
+  // Extract --profile flag from args
+  let customProfilePath: string | undefined;
+  const filteredArgs = args.filter(arg => {
+    if (arg.startsWith('--profile=')) {
+      customProfilePath = arg.split('=')[1];
+      customProfileSource = customProfilePath; // Store for port calculation
+      return false;
+    }
+    return true;
+  });
+
+  // Prepare Chrome profile and gitignore for project directory
+  profileConfig = prepareChromeProfile(PROJECT_DIR, customProfilePath);
+  ensureGitignore(PROJECT_DIR);
+
+  const command = filteredArgs[0];
 
   try {
     let result: { success: boolean; [key: string]: any };
 
     switch (command) {
       case 'navigate':
-        if (args.length < 2) {
-          throw new Error('Usage: browser navigate <url>');
+        if (filteredArgs.length < 2) {
+          throw new Error('Usage: browser navigate <url> [--profile=<path>]');
         }
-        result = await navigate(args[1]);
+        result = await navigate(filteredArgs[1]);
         break;
 
       case 'act':
-        if (args.length < 2) {
-          throw new Error('Usage: browser act "<action>"');
+        if (filteredArgs.length < 2) {
+          throw new Error('Usage: browser act "<action>" [--profile=<path>]');
         }
-        result = await act(args.slice(1).join(' '));
+        result = await act(filteredArgs.slice(1).join(' '));
         break;
 
       case 'extract':
-        if (args.length < 2) {
-          throw new Error('Usage: browser extract "<instruction>" [\'{"field": "type"}\']');
+        if (filteredArgs.length < 2) {
+          throw new Error('Usage: browser extract "<instruction>" [\'{"field": "type"}\'] [--profile=<path>]');
         }
-        const instruction = args[1];
-        const schema = args[2] ? JSON.parse(args[2]) : undefined;
+        const instruction = filteredArgs[1];
+        const schema = filteredArgs[2] ? JSON.parse(filteredArgs[2]) : undefined;
         result = await extract(instruction, schema);
         break;
 
       case 'observe':
-        if (args.length < 2) {
-          throw new Error('Usage: browser observe "<query>"');
+        if (filteredArgs.length < 2) {
+          throw new Error('Usage: browser observe "<query>" [--profile=<path>]');
         }
-        result = await observe(args.slice(1).join(' '));
+        result = await observe(filteredArgs.slice(1).join(' '));
         break;
 
       case 'screenshot':

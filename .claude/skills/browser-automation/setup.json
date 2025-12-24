@@ -1,5 +1,6 @@
 {
   "setupComplete": false,
+  "note": "Browser artifacts (.chrome-profile, .browser-screenshots, .browser-downloads) are stored in your project directory for per-session isolation",
   "prerequisites": {
     "chrome": {
       "required": true,

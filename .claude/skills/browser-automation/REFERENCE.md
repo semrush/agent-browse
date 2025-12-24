@@ -13,9 +13,12 @@ The browser automation system consists of:
 
 ### File Locations
 
-- **Chrome Profile**: `${CLAUDE_PLUGIN_DIR}/.chrome-profile/` - Persistent browser profile directory
-- **Screenshots**: `${CLAUDE_PLUGIN_DIR}/agent/browser_screenshots/` - Screenshot output directory
-- **Downloads**: `${CLAUDE_PLUGIN_DIR}/agent/downloads/` - File download directory
+- **Chrome Profile**: `${CLAUDE_PROJECT_DIR}/.chrome-profile/` - Per-project browser isolation
+- **Screenshots**: `${CLAUDE_PROJECT_DIR}/.browser-screenshots/` - Screenshot output
+- **Downloads**: `${CLAUDE_PROJECT_DIR}/.browser-downloads/` - Downloaded files
+- **CDP Port**: Dynamic (9222-9322) - Unique per project path, enables concurrent sessions
+
+All artifacts are stored in your project directory, allowing multiple Claude sessions to use independent browsers concurrently.
 
 ## CLI Command Reference
 
@@ -262,7 +265,7 @@ JSON output:
 
 **Screenshot Path Format**:
 ```
-./agent/browser_screenshots/screenshot-YYYY-MM-DDTHH-MM-SS-mmmZ.png
+.browser-screenshots/screenshot-YYYY-MM-DDTHH-MM-SS-mmmZ.png
 ```
 
 **Example**:
@@ -371,8 +374,8 @@ Chrome is launched by `${CLAUDE_PLUGIN_DIR}/cli.ts` with:
 ```
 
 **Arguments**:
-- `--remote-debugging-port`: Enables CDP on port 9222
-- `--user-data-dir`: Persistent profile directory for session/cookie persistence
+- `--remote-debugging-port`: Enables CDP (port is dynamically assigned 9222-9322 based on project path)
+- `--user-data-dir`: Persistent profile directory in project for session/cookie persistence
 - `--window-position`: Launches minimized off-screen
 - `--window-size`: Default window size
 
@@ -383,14 +386,14 @@ Downloads are configured via CDP:
 ```typescript
 await client.send("Browser.setDownloadBehavior", {
   behavior: "allow",
-  downloadPath: "./agent/downloads",
+  downloadPath: ".browser-downloads",
   eventsEnabled: true,
 })
 ```
 
 **Behavior**:
 - Downloads start automatically (no dialog)
-- Files saved to `./agent/downloads/`
+- Files saved to `.browser-downloads/` in project directory
 - Download events can be monitored via CDP
 
 ---
@@ -421,7 +424,7 @@ await client.send("Browser.setDownloadBehavior", {
 
 **"Error taking screenshot: directory not writable"**
 - Cause: Insufficient permissions for screenshots directory
-- Solution: Check file permissions on `./agent/browser_screenshots/`
+- Solution: Check file permissions on `.browser-screenshots/` in your project
 
 ---
 
@@ -456,13 +459,13 @@ Browser automation consumes:
 
 ### Credential Handling
 
-- Browser uses persistent profile (`.chrome-profile/`)
+- Browser uses persistent profile (`.chrome-profile/` in project directory)
 - Saved passwords and cookies persist between sessions
 - Consider using isolated profiles for sensitive operations
 
 ### Download Safety
 
-- Downloads automatically saved to `./agent/downloads/`
+- Downloads automatically saved to `.browser-downloads/` in project directory
 - No file type restrictions enforced
 - Verify downloaded file integrity before use
 
@@ -510,8 +513,8 @@ ps aux | grep chrome
 
 Screenshots provide visual debugging:
 ```bash
-ls -lh ./agent/browser_screenshots/
-open ./agent/browser_screenshots/screenshot-*.png
+ls -lh .browser-screenshots/
+open .browser-screenshots/screenshot-*.png
 ```
 
 ### Test CLI Commands

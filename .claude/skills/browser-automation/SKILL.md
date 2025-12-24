@@ -14,16 +14,13 @@ This skill uses a CLI-based approach where Claude Code calls browser automation 
 
 ## Setup Verification
 
-**IMPORTANT: Before using any browser commands, you MUST check setup.json in this directory.**
+**Before using browser commands, first check if the `browser` command is available.**
 
-### First-Time Setup Check
+### Quick Check
 
-1. **Read `setup.json`** (located in `${CLAUDE_PLUGIN_DIR}/.claude/skills/browser-automation/setup.json`)
-2. **Check `setupComplete` field**:
-   - If `true`: All prerequisites are met, proceed with browser commands
-   - If `false`: Setup required - follow the steps below
+Run `which browser` or `command -v browser`. If the command is found, proceed with browser commands.
 
-### If Setup is Required (`setupComplete: false`)
+### If Command Not Found
 
 Run these commands in the plugin directory:
 
@@ -50,10 +47,6 @@ cp .env.example .env
 
 # 5. Test the installation
 browser navigate https://example.com
-
-# 6. If test succeeds, update setup.json
-# Set all "installed"/"configured" fields to true
-# Set "setupComplete" to true
 ```
 
 ### Prerequisites Summary
@@ -63,13 +56,11 @@ browser navigate https://example.com
 - ✅ Browser command globally available (`npm link` creates the global symlink)
 - ✅ Anthropic API key configured (exported as `ANTHROPIC_API_KEY` environment variable or in `.env` file)
 
-**DO NOT attempt to use browser commands if `setupComplete: false` in setup.json. Guide the user through setup first.**
-
 ## Available Commands
 
 ### Navigate to URLs
 ```bash
-browser navigate <url>
+browser navigate <url> [--profile=<path>]
 ```
 
 **When to use**: Opening any website, loading a specific URL, going to a web page.
@@ -77,6 +68,9 @@ browser navigate <url>
 **Example usage**:
 - `browser navigate https://example.com`
 - `browser navigate https://news.ycombinator.com`
+- `browser navigate https://claude.ai --profile=~/.config/chrome-profiles/claude`
+
+**Profile flag**: Use `--profile=<path>` to specify a custom Chrome profile directory. On first run, this profile is copied to `.chrome-profile/` in the project. Useful for reusing pre-logged-in sessions.
 
 **Output**: JSON with success status, message, screenshot path, and optionally `pageContext`
 
@@ -173,7 +167,7 @@ browser screenshot
 **When to use**: Visual verification, documenting page state, debugging, creating records.
 
 **Notes**:
-- Screenshots are saved to the plugin directory's `agent/browser_screenshots/` folder
+- Screenshots are saved to your project's `.browser-screenshots/` folder
 - Images larger than 2000x2000 pixels are automatically resized
 - Filename includes timestamp for uniqueness
 
@@ -209,6 +203,25 @@ browser close
 7. **Be specific**: Use precise selectors in natural language ("the blue Submit button" vs "the button")
 8. **Chain commands**: Run multiple commands sequentially without reopening the browser
 
+## Scrolling Best Practices
+
+Scrolling can be unreliable. These patterns work best:
+
+```bash
+# Prefer keyboard shortcuts - most reliable
+browser act "press the End key"      # bottom
+browser act "press the Home key"     # top
+browser act "press Page Down"        # one viewport
+
+# Be specific with targets
+browser act "scroll until the Submit button is visible"
+
+# For chat UIs/SPAs with nested scrollable areas
+browser act "scroll the chat messages container to the bottom"
+```
+
+Avoid vague instructions like "scroll down a bit" - they're interpreted inconsistently.
+
 ## Common Patterns
 
 ### Simple browsing task
@@ -216,6 +229,15 @@ browser close
 browser navigate https://example.com
 browser act "click the login button"
 browser screenshot
+browser close
+```
+
+### Using a pre-logged-in profile
+```bash
+# First run: copies profile to .chrome-profile/
+browser navigate https://claude.ai --profile=~/.config/chrome-profiles/claude
+browser act "start a new conversation"
+browser extract "get the response text"
 browser close
 ```
 
@@ -257,11 +279,13 @@ browser close
 
 **Action fails**: Be more specific in natural language description. Instead of "click the button", try "click the blue Submit button in the form"
 
-**Screenshots missing**: Check the plugin directory's `agent/browser_screenshots/` folder for saved files
+**Screenshots missing**: Check your project's `.browser-screenshots/` folder for saved files
 
 **Chrome not found**: Install Google Chrome or the CLI will show an error with installation instructions
 
 **Port 9222 in use**: Another Chrome debugging session is running. Close it or wait for timeout
+
+**Profile not working**: The `--profile` flag only takes effect on first run. Delete `.chrome-profile/` to re-copy a different profile
 
 For detailed examples, see [EXAMPLES.md](EXAMPLES.md).
 For API reference and technical details, see [REFERENCE.md](REFERENCE.md).

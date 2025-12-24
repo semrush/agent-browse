@@ -73,41 +73,94 @@ export function getChromeUserDataDir(): string | undefined {
 }
 
 /**
- * Prepares the Chrome profile by copying it to .chrome-profile directory (first run only)
- * This should be called before initializing Stagehand to avoid timeouts
- * @param pluginRoot The root directory of the plugin
+ * Parses a Chrome profile path into user-data-dir and profile-directory components
+ * @param profilePath Full path to a Chrome profile (e.g., ~/Library/Application Support/Google/Chrome/Profile 2)
+ * @returns Object with userDataDir and profileDirectory, or null if invalid
  */
-export function prepareChromeProfile(pluginRoot: string) {
-  const sourceUserDataDir = getChromeUserDataDir();
-  const tempUserDataDir = join(pluginRoot, '.chrome-profile');
+export function parseProfilePath(profilePath: string): { userDataDir: string; profileDirectory: string } | null {
+  const expanded = profilePath.replace(/^~/, process.env.HOME || '');
 
-  // Only copy if the temp directory doesn't exist yet
-  if (!existsSync(tempUserDataDir)) {
-    const dim = '\x1b[2m';
-    const reset = '\x1b[0m';
+  // Profile path should be: <user-data-dir>/<profile-directory>
+  // e.g., /Users/x/Library/Application Support/Google/Chrome/Profile 2
+  const lastSlash = expanded.lastIndexOf('/');
+  if (lastSlash === -1) return null;
 
-    // Show copying message
-    console.log(`${dim}Copying Chrome profile to .chrome-profile/ (this may take a minute)...${reset}`);
+  const userDataDir = expanded.substring(0, lastSlash);
+  const profileDirectory = expanded.substring(lastSlash + 1);
 
-    mkdirSync(tempUserDataDir, { recursive: true });
+  if (!profileDirectory || !userDataDir) return null;
 
-    // Copy the Default profile directory (contains cookies, local storage, etc.)
-    const sourceDefaultProfile = join(sourceUserDataDir!, 'Default');
-    const destDefaultProfile = join(tempUserDataDir, 'Default');
+  return { userDataDir, profileDirectory };
+}
 
-    if (existsSync(sourceDefaultProfile)) {
-      cpSync(sourceDefaultProfile, destDefaultProfile, { recursive: true });
-      console.log(`${dim}✓ Profile copied successfully${reset}\n`);
-    } else {
-      console.log(`${dim}No existing profile found, using fresh profile${reset}\n`);
+/**
+ * Prepares the Chrome profile directory for browser launch
+ * Always copies profile to isolated location for parallel session support
+ * @param projectDir The project directory where .chrome-profile will be created
+ * @param customProfilePath Optional path to a custom Chrome profile to copy from
+ * @returns Object with profile configuration for Chrome launch
+ */
+export function prepareChromeProfile(projectDir: string, customProfilePath?: string): {
+  userDataDir: string;
+  profileDirectory?: string;
+  isCustomProfile: boolean;
+} {
+  const dim = '\x1b[2m';
+  const reset = '\x1b[0m';
+
+  // Determine source profile to copy
+  let sourceProfile: string | null = null;
+  let profileName = 'Default';
+
+  if (customProfilePath) {
+    const parsed = parseProfilePath(customProfilePath);
+    if (parsed) {
+      const fullPath = customProfilePath.replace(/^~/, process.env.HOME || '');
+      if (existsSync(fullPath)) {
+        sourceProfile = fullPath;
+        profileName = parsed.profileDirectory;
+      } else {
+        console.log(`${dim}Custom profile not found at ${fullPath}, using fresh profile${reset}\n`);
+      }
+    }
+  } else {
+    // Use system default profile
+    const sourceUserDataDir = getChromeUserDataDir();
+    const defaultProfile = join(sourceUserDataDir!, 'Default');
+    if (existsSync(defaultProfile)) {
+      sourceProfile = defaultProfile;
     }
   }
+
+  // Create isolated user-data-dir in project directory
+  const tempUserDataDir = join(projectDir, '.chrome-profile');
+  const destProfile = join(tempUserDataDir, 'Default');
+
+  if (!existsSync(destProfile)) {
+    mkdirSync(tempUserDataDir, { recursive: true });
+
+    if (sourceProfile) {
+      console.log(`${dim}Copying ${profileName} profile to .chrome-profile/ (this may take a minute)...${reset}`);
+      cpSync(sourceProfile, destProfile, { recursive: true });
+      console.log(`${dim}✓ Profile copied successfully${reset}\n`);
+    } else {
+      console.log(`${dim}Creating fresh Chrome profile in .chrome-profile/${reset}\n`);
+      mkdirSync(destProfile, { recursive: true });
+    }
+  } else {
+    console.log(`${dim}Using existing .chrome-profile/${reset}\n`);
+  }
+
+  return {
+    userDataDir: tempUserDataDir,
+    isCustomProfile: !!customProfilePath
+  };
 }
 
  // Use CDP to take screenshot directly
-export async function takeScreenshot(page: Page, pluginRoot: string) {
+export async function takeScreenshot(page: Page, projectDir: string) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const screenshotDir = join(pluginRoot, 'agent/browser_screenshots');
+  const screenshotDir = join(projectDir, '.browser-screenshots');
   const screenshotPath = join(screenshotDir, `screenshot-${timestamp}.png`);
 
   // Create directory if it doesn't exist
